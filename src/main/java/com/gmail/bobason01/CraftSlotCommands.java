@@ -7,7 +7,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -34,9 +33,7 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 		pluginCommand.setTabCompleter(command);
 
 		getServer().getPluginManager().registerEvents(this, this);
-		if (config.getBoolean("items-enabled", true)) {
-			getServer().getPluginManager().registerEvents(new CraftSlotItemsListener(config), this);
-		}
+		getServer().getPluginManager().registerEvents(new CraftSlotItemsListener(config), this);
 	}
 
 	@Override
@@ -51,13 +48,12 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 		if (!(e.getWhoClicked() instanceof Player player)) return;
 		if (e.getInventory().getType() != InventoryType.CRAFTING) return;
 
-		int slot = e.getRawSlot();
-		if (slot >= 0 && slot <= 4 && config.contains("crafting-slot." + slot)) {
-			e.setCancelled(true);
-			player.setItemOnCursor(null); // 고스트 클릭 복제 방지
-
-			String cmd = config.getString("crafting-slot." + slot);
+		int rawSlot = e.getRawSlot();
+		if (rawSlot >= 0 && rawSlot <= 4) {
+			String cmd = config.getString("crafting-slot." + rawSlot);
 			if (cmd != null && !cmd.isEmpty()) {
+				e.setCancelled(true);
+				player.setItemOnCursor(null);
 				Bukkit.getScheduler().runTask(this, () -> {
 					if (cmd.startsWith("*")) {
 						Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.substring(1));
@@ -65,21 +61,13 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 						Bukkit.dispatchCommand(player, cmd);
 					}
 				});
+				Bukkit.getScheduler().runTaskLater(this, () -> CraftSlotItemsListener.sendGhostItems(player), 1L);
+				return;
 			}
-
-			// 다시 패킷으로 고스트 아이템 재전송
-			Bukkit.getScheduler().runTaskLater(this, () -> CraftSlotItemsListener.sendGhostItems(player), 1L);
-		} else {
-			// 다른 슬롯 클릭해도 재표시
-			Bukkit.getScheduler().runTaskLater(this, () -> CraftSlotItemsListener.sendGhostItems(player), 1L);
 		}
-	}
 
-	@EventHandler
-	public void onInventoryOpen(InventoryOpenEvent e) {
-		if (e.getInventory().getType() == InventoryType.CRAFTING && e.getPlayer() instanceof Player player) {
-			Bukkit.getScheduler().runTaskLater(this, () -> CraftSlotItemsListener.sendGhostItems(player), 1L);
-		}
+		// 아무 슬롯 클릭해도 다시 고스트 아이템 표시
+		Bukkit.getScheduler().runTaskLater(this, () -> CraftSlotItemsListener.sendGhostItems(player), 1L);
 	}
 
 	private void tryMigrateOldData() {

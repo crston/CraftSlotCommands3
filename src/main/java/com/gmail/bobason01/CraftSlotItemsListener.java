@@ -1,16 +1,16 @@
 package com.gmail.bobason01;
 
+import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.events.PacketContainer;
-import com.comphenix.protocol.PacketType;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerRespawnEvent;
-import org.bukkit.event.player.PlayerGameModeChangeEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
@@ -31,56 +31,59 @@ public class CraftSlotItemsListener implements Listener {
     }
 
     @EventHandler
-    public void onPlayerRespawn(PlayerRespawnEvent e) {
-        sendGhostItemsLater(e.getPlayer());
+    public void onInventoryClose(InventoryCloseEvent e) {
+        sendGhostItemsLater((Player) e.getPlayer());
     }
 
     @EventHandler
-    public void onPlayerGameModeChange(PlayerGameModeChangeEvent e) {
-        sendGhostItemsLater(e.getPlayer());
+    public void onPlayerQuit(PlayerQuitEvent e) {
+        removeGhostItems(e.getPlayer());
     }
 
-    private void sendGhostItemsLater(Player player) {
+    public static void sendGhostItemsLater(Player player) {
         Bukkit.getScheduler().runTaskLater(CraftSlotCommands.plugin, () -> {
             if (!player.isOnline() || player.isDead()) return;
             sendGhostItems(player);
-        }, 1L);
+        }, 2L); // 최소한의 딜레이로 안정성 확보
     }
 
     public static void sendGhostItems(Player player) {
         PacketContainer packet = new PacketContainer(PacketType.Play.Server.WINDOW_ITEMS);
-        packet.getIntegers().write(0, 0); // windowId 0 = 플레이어 인벤토리
+        packet.getIntegers().write(0, 0); // 0번 창: 플레이어 기본 인벤토리
 
         List<ItemStack> items = new ArrayList<>();
-        items.add(i0); // crafting result
-        items.add(i1); // crafting grid
+        items.add(i0); // 결과 슬롯
+        items.add(i1);
         items.add(i2);
         items.add(i3);
         items.add(i4);
 
-        while (items.size() < 46) items.add(null); // 나머지 인벤토리 슬롯
+        while (items.size() < 46) {
+            items.add(null);
+        }
 
         packet.getItemListModifier().write(0, items);
 
         try {
             ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
         } catch (Exception e) {
-            CraftSlotCommands.plugin.getLogger().warning("Failed to send ghost items to " + player.getName());
+            CraftSlotCommands.plugin.getLogger().warning("Failed to send ghost items: " + e.getMessage());
         }
     }
 
     public static void removeGhostItems(Player player) {
+        // 빈 아이템을 전송하여 초기화
         PacketContainer packet = new PacketContainer(PacketType.Play.Server.WINDOW_ITEMS);
         packet.getIntegers().write(0, 0);
 
-        List<ItemStack> items = new ArrayList<>();
-        for (int i = 0; i < 46; i++) items.add(null);
-        packet.getItemListModifier().write(0, items);
+        List<ItemStack> empty = new ArrayList<>();
+        for (int i = 0; i < 46; i++) empty.add(null);
+        packet.getItemListModifier().write(0, empty);
 
         try {
             ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
         } catch (Exception e) {
-            CraftSlotCommands.plugin.getLogger().warning("Failed to clear ghost items for " + player.getName());
+            CraftSlotCommands.plugin.getLogger().warning("Failed to clear ghost items: " + e.getMessage());
         }
     }
 

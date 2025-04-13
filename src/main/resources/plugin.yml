@@ -2,7 +2,6 @@ name: CraftSlotCommands3
 main: com.gmail.bobason01.CraftSlotCommands
 version: 1.0
 api-version: 1.13
-depend: [ProtocolLib]
 author: crston
 commands:
   craftslotcommands:

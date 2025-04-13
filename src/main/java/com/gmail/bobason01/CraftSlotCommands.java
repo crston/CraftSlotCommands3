@@ -1,91 +1,121 @@
 package com.gmail.bobason01;
 
 import org.bukkit.Bukkit;
-import org.bukkit.command.PluginCommand;
-import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.command.*;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.event.*;
+import org.bukkit.event.inventory.*;
+import org.bukkit.inventory.*;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.util.Objects;
+import javax.annotation.Nonnull;
+import java.util.*;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 public class CraftSlotCommands extends JavaPlugin implements Listener {
+
 	public static CraftSlotCommands plugin;
-	public static FileConfiguration config;
+	private CraftSlotItemsListener csil;
 
 	@Override
 	public void onEnable() {
 		plugin = this;
-		tryMigrateOldData();
 		saveDefaultConfig();
-		config = getConfig();
 
-		PluginCommand pluginCommand = Objects.requireNonNull(getCommand("craftslotcommands"));
 		CSCCommand command = new CSCCommand();
-		pluginCommand.setExecutor(command);
-		pluginCommand.setTabCompleter(command);
+		Objects.requireNonNull(getCommand("craftslotcommands")).setExecutor(command);
+		Objects.requireNonNull(getCommand("craftslotcommands")).setTabCompleter(command);
 
 		getServer().getPluginManager().registerEvents(this, this);
-		getServer().getPluginManager().registerEvents(new CraftSlotItemsListener(config), this);
+
+		if (getConfig().getBoolean("items-enabled")) {
+			csil = new CraftSlotItemsListener(getConfig());
+			getServer().getPluginManager().registerEvents(csil, this);
+		}
 	}
 
 	@Override
 	public void onDisable() {
-		for (Player player : Bukkit.getOnlinePlayers()) {
-			CraftSlotItemsListener.removeGhostItems(player);
-		}
+		Bukkit.getOnlinePlayers().stream()
+				.filter(p -> is2x2Crafting(p.getOpenInventory().getTopInventory()))
+				.forEach(p -> CraftSlotItemsListener.removeCommandItems(p.getOpenInventory()));
+	}
+
+	private void reload() {
+		reloadConfig();
+		if (csil != null) csil.reload(getConfig());
 	}
 
 	@EventHandler
 	public void onInventoryClick(InventoryClickEvent e) {
-		if (!(e.getWhoClicked() instanceof Player player)) return;
-		if (e.getInventory().getType() != InventoryType.CRAFTING) return;
+		if (!isValidSlotClick(e)) return;
 
-		int rawSlot = e.getRawSlot();
-		if (rawSlot >= 0 && rawSlot <= 4) {
-			String cmd = config.getString("crafting-slot." + rawSlot);
-			if (cmd != null && !cmd.isEmpty()) {
-				e.setCancelled(true);
-				player.setItemOnCursor(null);
-				Bukkit.getScheduler().runTask(this, () -> {
-					if (cmd.startsWith("*")) {
-						Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.substring(1));
-					} else {
-						Bukkit.dispatchCommand(player, cmd);
-					}
-				});
-				Bukkit.getScheduler().runTaskLater(this, () -> CraftSlotItemsListener.sendGhostItems(player), 1L);
-				return;
+		e.setCancelled(true);
+		Player player = (Player) e.getWhoClicked();
+		int slot = e.getSlot();
+
+		String cmd = getConfig().getString("crafting-slot." + slot);
+		if (cmd == null || cmd.isEmpty()) return;
+
+		Bukkit.getScheduler().runTask(this, () -> {
+			if (cmd.startsWith("*")) {
+				Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.substring(1));
+			} else {
+				Bukkit.dispatchCommand(player, cmd);
 			}
-		}
-
-		Bukkit.getScheduler().runTaskLater(this, () -> CraftSlotItemsListener.sendGhostItems(player), 1L);
+		});
 	}
 
-	private void tryMigrateOldData() {
-		File currentDir = getDataFolder();
-		if (currentDir.exists()) return;
+	private boolean isValidSlotClick(InventoryClickEvent e) {
+		return e.getInventory() instanceof CraftingInventory && e.getInventory().getSize() == 5
+				&& e.getSlot() >= 0 && e.getSlot() <= 4
+				&& switch (e.getSlotType()) {
+			case CONTAINER, ARMOR, FUEL, OUTSIDE, QUICKBAR -> false;
+			default -> true;
+		};
+	}
 
-		File oldV2 = new File(getServer().getPluginsFolder(), "CraftSlotCommands2");
-		File oldV1 = new File(getServer().getPluginsFolder(), "CraftSlotCommands");
+	private boolean is2x2Crafting(Inventory inv) {
+		return inv instanceof CraftingInventory && inv.getSize() == 5;
+	}
 
-		try {
-			if (oldV2.exists()) {
-				Files.move(oldV2.toPath(), currentDir.toPath(), StandardCopyOption.REPLACE_EXISTING);
-				getLogger().info("✅ Migrated config from CraftSlotCommands2 → CraftSlotCommands3");
-			} else if (oldV1.exists()) {
-				Files.move(oldV1.toPath(), currentDir.toPath(), StandardCopyOption.REPLACE_EXISTING);
-				getLogger().info("✅ Migrated config from CraftSlotCommands → CraftSlotCommands3");
+	public static class CSCCommand implements CommandExecutor, TabCompleter {
+
+		@Override
+		public boolean onCommand(CommandSender sender, @Nonnull Command command, @Nonnull String label, @Nonnull String[] args) {
+			if (!sender.hasPermission("csc.admin")) {
+				send(sender, Component.text("You do not have permission to use this command.", NamedTextColor.RED));
+				return true;
 			}
-		} catch (IOException e) {
-			getLogger().warning("⚠ Failed to migrate old data: " + e.getMessage());
+
+			if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
+				plugin.reload();
+				sendPrefixed(sender, Component.text("Successfully reloaded.", NamedTextColor.GREEN));
+			} else {
+				sendPrefixed(sender, Component.text("Version 2.0", NamedTextColor.GREEN));
+			}
+
+			return true;
+		}
+
+		@Override
+		public List<String> onTabComplete(@Nonnull CommandSender sender, @Nonnull Command command, @Nonnull String alias, String[] args) {
+			return args.length == 1 ? Collections.singletonList("reload") : Collections.emptyList();
+		}
+
+		private void sendPrefixed(CommandSender sender, Component message) {
+			Component prefix = Component.text("[CraftSlotCommands] ", NamedTextColor.AQUA);
+			send(sender, prefix.append(message));
+		}
+
+		private void send(CommandSender sender, Component message) {
+			if (sender instanceof Player player) {
+				player.sendMessage(message);
+			} else {
+				Bukkit.getConsoleSender().sendMessage(message);
+			}
 		}
 	}
 }

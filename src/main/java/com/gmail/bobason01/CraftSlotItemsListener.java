@@ -33,29 +33,32 @@ public class CraftSlotItemsListener implements Listener {
 
     @EventHandler
     public void onRecipeClick(PlayerRecipeBookClickEvent e) {
-        if (is2x2Crafting(e.getPlayer().getOpenInventory().getTopInventory())) {
+        InventoryView view = e.getPlayer().getOpenInventory();
+        if (isSelf2x2Crafting(view)) {
             e.setCancelled(true);
         }
     }
 
     @EventHandler
     public void onInventoryClick(InventoryClickEvent e) {
-        if (!is2x2Crafting(e.getInventory())) return;
-        removeCommandItems(e.getView());
-        scheduleAddItems(e.getWhoClicked().getOpenInventory());
+        InventoryView view = e.getView();
+        if (!isSelf2x2Crafting(view)) return;
+        removeCommandItems(view);
+        scheduleAddItems(view);
     }
 
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent e) {
-        if (!is2x2Crafting(e.getInventory())) return;
-        removeCommandItems(e.getView());
-        scheduleAddItems(e.getPlayer().getOpenInventory());
+        InventoryView view = e.getPlayer().getOpenInventory();
+        if (!isSelf2x2Crafting(view)) return;
+        removeCommandItems(view);
+        scheduleAddItems(view);
     }
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent e) {
         InventoryView view = e.getPlayer().getOpenInventory();
-        if (is2x2Crafting(view.getTopInventory())) {
+        if (isSelf2x2Crafting(view)) {
             removeCommandItems(view);
         }
     }
@@ -63,18 +66,23 @@ public class CraftSlotItemsListener implements Listener {
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent e) {
         InventoryView view = e.getEntity().getOpenInventory();
-        if (is2x2Crafting(view.getTopInventory())) {
+        if (isSelf2x2Crafting(view)) {
             removeCommandItems(view);
         }
     }
 
-    private boolean is2x2Crafting(Inventory inv) {
-        return inv instanceof CraftingInventory && inv.getSize() == 5;
+    private boolean isSelf2x2Crafting(InventoryView view) {
+        Inventory inv = view.getTopInventory();
+        if (!(inv instanceof CraftingInventory)) return false;
+        if (inv.getSize() != 5) return false;
+        if (!(inv.getHolder() instanceof Player holder)) return false;
+        if (!(view.getPlayer() instanceof Player viewer)) return false;
+        return holder.equals(viewer);
     }
 
     private void scheduleAddItems(InventoryView view) {
         Bukkit.getScheduler().runTaskLater(CraftSlotCommands.plugin, () -> {
-            if (is2x2Crafting(view.getTopInventory())) {
+            if (isSelf2x2Crafting(view)) {
                 addCommandItems(view);
             }
         }, 2L);
@@ -91,7 +99,7 @@ public class CraftSlotItemsListener implements Listener {
             }
         }
 
-        // 슬롯 1~4가 모두 채워졌을 때만 0번을 세팅 (클라이언트에 안 보이는 것 방지)
+        // 슬롯 1~4가 모두 채워졌을 때만 0번을 세팅
         boolean showResultSlot = true;
         for (int i = 1; i <= 4; i++) {
             ItemStack item = inv.getItem(i);

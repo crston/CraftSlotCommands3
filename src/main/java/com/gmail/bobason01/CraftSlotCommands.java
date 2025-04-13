@@ -66,7 +66,6 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 			}
 		}
 
-		// 아무 슬롯 클릭해도 다시 고스트 아이템 표시
 		Bukkit.getScheduler().runTaskLater(this, () -> CraftSlotItemsListener.sendGhostItems(player), 1L);
 	}
 

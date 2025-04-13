@@ -3,6 +3,7 @@ package com.gmail.bobason01;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.inventory.ItemFlag;
@@ -18,45 +19,49 @@ public class ItemBuilder {
     private static final LegacyComponentSerializer legacy = LegacyComponentSerializer.legacyAmpersand();
 
     public static ItemStack build(ConfigurationSection config) {
-        ItemStack item = new ItemStack(Material.valueOf(config.getString("material")));
-        ItemMeta meta = item.getItemMeta();
-        if (meta == null) return item;
+        if (config == null || !config.contains("material")) {
+            return new ItemStack(Material.AIR);
+        }
 
-        // Display name
-        if (config.contains("name")) {
-            String name = config.getString("name");
-            if (name != null) {
-                Component displayName = deserialize(name);
-                meta.displayName(displayName);
+        try {
+            ItemStack item = new ItemStack(Material.valueOf(config.getString("material")));
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null) return item;
+
+            if (config.contains("name")) {
+                String name = config.getString("name");
+                if (name != null) {
+                    Component displayName = deserialize(name);
+                    meta.displayName(displayName);
+                }
             }
-        }
 
-        // Model data
-        if (config.contains("model")) {
-            meta.setCustomModelData(config.getInt("model"));
-        }
-
-        // Hide flags
-        if (config.getBoolean("hide-flags", false)) {
-            meta.addItemFlags(ItemFlag.values());
-        }
-
-        // Unbreakable
-        if (config.getBoolean("unbreakable", false)) {
-            meta.setUnbreakable(true);
-        }
-
-        // Lore
-        if (config.contains("lore")) {
-            List<Component> lore = new ArrayList<>();
-            for (String line : config.getStringList("lore")) {
-                lore.add(deserialize(line));
+            if (config.contains("model")) {
+                meta.setCustomModelData(config.getInt("model"));
             }
-            meta.lore(lore);
-        }
 
-        item.setItemMeta(meta);
-        return item;
+            if (config.getBoolean("hide-flags", false)) {
+                meta.addItemFlags(ItemFlag.values());
+            }
+
+            if (config.getBoolean("unbreakable", false)) {
+                meta.setUnbreakable(true);
+            }
+
+            if (config.contains("lore")) {
+                List<Component> lore = new ArrayList<>();
+                for (String line : config.getStringList("lore")) {
+                    lore.add(deserialize(line));
+                }
+                meta.lore(lore);
+            }
+
+            item.setItemMeta(meta);
+            return item;
+        } catch (Exception e) {
+            CraftSlotCommands.plugin.getLogger().warning("[CraftSlotCommands3] Incorrect item setting: " + e.getMessage());
+            return new ItemStack(Material.AIR);
+        }
     }
 
     private static Component deserialize(String text) {

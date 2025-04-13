@@ -14,7 +14,7 @@ public class CSCCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                              @NotNull String label, @NotNull String @NotNull [] args) {
-        sender.sendMessage("CraftSlotCommands is running!");
+        sender.sendMessage("CraftSlotCommands3 is running!");
         return true;
     }
 

@@ -15,7 +15,6 @@ import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 public class CraftSlotItemsListener implements Listener {
 
@@ -44,19 +43,19 @@ public class CraftSlotItemsListener implements Listener {
         Bukkit.getScheduler().runTaskLater(CraftSlotCommands.plugin, () -> {
             if (!player.isOnline() || player.isDead()) return;
             sendGhostItems(player);
-        }, 2L); // 최소한의 딜레이로 안정성 확보
+        }, 2L);
     }
 
     public static void sendGhostItems(Player player) {
         PacketContainer packet = new PacketContainer(PacketType.Play.Server.WINDOW_ITEMS);
-        packet.getIntegers().write(0, 0); // 0번 창: 플레이어 기본 인벤토리
+        packet.getIntegers().write(0, 0); // Player inventory window
 
         List<ItemStack> items = new ArrayList<>();
-        items.add(i0); // 결과 슬롯
-        items.add(i1);
-        items.add(i2);
-        items.add(i3);
-        items.add(i4);
+        items.add(i0 != null ? i0 : new ItemStack(org.bukkit.Material.AIR));
+        items.add(i1 != null ? i1 : new ItemStack(org.bukkit.Material.AIR));
+        items.add(i2 != null ? i2 : new ItemStack(org.bukkit.Material.AIR));
+        items.add(i3 != null ? i3 : new ItemStack(org.bukkit.Material.AIR));
+        items.add(i4 != null ? i4 : new ItemStack(org.bukkit.Material.AIR));
 
         while (items.size() < 46) {
             items.add(null);
@@ -72,7 +71,6 @@ public class CraftSlotItemsListener implements Listener {
     }
 
     public static void removeGhostItems(Player player) {
-        // 빈 아이템을 전송하여 초기화
         PacketContainer packet = new PacketContainer(PacketType.Play.Server.WINDOW_ITEMS);
         packet.getIntegers().write(0, 0);
 
@@ -88,10 +86,14 @@ public class CraftSlotItemsListener implements Listener {
     }
 
     public void reload(FileConfiguration config) {
-        i0 = ItemBuilder.build(Objects.requireNonNull(config.getConfigurationSection("slot-item.0")));
-        i1 = ItemBuilder.build(Objects.requireNonNull(config.getConfigurationSection("slot-item.1")));
-        i2 = ItemBuilder.build(Objects.requireNonNull(config.getConfigurationSection("slot-item.2")));
-        i3 = ItemBuilder.build(Objects.requireNonNull(config.getConfigurationSection("slot-item.3")));
-        i4 = ItemBuilder.build(Objects.requireNonNull(config.getConfigurationSection("slot-item.4")));
+        i0 = safeBuild(config.getConfigurationSection("slot-item.0"));
+        i1 = safeBuild(config.getConfigurationSection("slot-item.1"));
+        i2 = safeBuild(config.getConfigurationSection("slot-item.2"));
+        i3 = safeBuild(config.getConfigurationSection("slot-item.3"));
+        i4 = safeBuild(config.getConfigurationSection("slot-item.4"));
+    }
+
+    private ItemStack safeBuild(org.bukkit.configuration.ConfigurationSection section) {
+        return ItemBuilder.build(section);
     }
 }

@@ -24,7 +24,8 @@ public class ItemBuilder {
         }
 
         try {
-            ItemStack item = new ItemStack(Material.valueOf(config.getString("material")));
+            Material mat = Material.valueOf(config.getString("material", "AIR"));
+            ItemStack item = new ItemStack(mat);
             ItemMeta meta = item.getItemMeta();
             if (meta == null) return item;
 
@@ -59,7 +60,7 @@ public class ItemBuilder {
             item.setItemMeta(meta);
             return item;
         } catch (Exception e) {
-            CraftSlotCommands.plugin.getLogger().warning("[CraftSlotCommands3] Incorrect item setting: " + e.getMessage());
+            Bukkit.getLogger().warning("[CraftSlotCommands] Item Setting Error - " + e.getMessage());
             return new ItemStack(Material.AIR);
         }
     }

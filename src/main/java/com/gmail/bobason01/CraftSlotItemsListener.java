@@ -4,6 +4,7 @@ import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.events.PacketContainer;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -48,17 +49,18 @@ public class CraftSlotItemsListener implements Listener {
 
     public static void sendGhostItems(Player player) {
         PacketContainer packet = new PacketContainer(PacketType.Play.Server.WINDOW_ITEMS);
-        packet.getIntegers().write(0, 0); // Player inventory window
+        packet.getIntegers().write(0, 0); // 창 번호 0: 기본 인벤토리
 
         List<ItemStack> items = new ArrayList<>();
-        items.add(i0 != null ? i0 : new ItemStack(org.bukkit.Material.AIR));
-        items.add(i1 != null ? i1 : new ItemStack(org.bukkit.Material.AIR));
-        items.add(i2 != null ? i2 : new ItemStack(org.bukkit.Material.AIR));
-        items.add(i3 != null ? i3 : new ItemStack(org.bukkit.Material.AIR));
-        items.add(i4 != null ? i4 : new ItemStack(org.bukkit.Material.AIR));
+        items.add(nonNull(i0));
+        items.add(nonNull(i1));
+        items.add(nonNull(i2));
+        items.add(nonNull(i3));
+        items.add(nonNull(i4));
 
+        // 인벤토리 총 46칸 (0~45)
         while (items.size() < 46) {
-            items.add(null);
+            items.add(new ItemStack(Material.AIR));
         }
 
         packet.getItemListModifier().write(0, items);
@@ -66,7 +68,7 @@ public class CraftSlotItemsListener implements Listener {
         try {
             ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
         } catch (Exception e) {
-            CraftSlotCommands.plugin.getLogger().warning("Failed to send ghost items: " + e.getMessage());
+            CraftSlotCommands.plugin.getLogger().warning("Failed to send ghost items - " + e.getMessage());
         }
     }
 
@@ -75,25 +77,30 @@ public class CraftSlotItemsListener implements Listener {
         packet.getIntegers().write(0, 0);
 
         List<ItemStack> empty = new ArrayList<>();
-        for (int i = 0; i < 46; i++) empty.add(null);
+        for (int i = 0; i < 46; i++) empty.add(new ItemStack(Material.AIR));
         packet.getItemListModifier().write(0, empty);
 
         try {
             ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
         } catch (Exception e) {
-            CraftSlotCommands.plugin.getLogger().warning("Failed to clear ghost items: " + e.getMessage());
+            CraftSlotCommands.plugin.getLogger().warning("Failed to clear ghost items - " + e.getMessage());
         }
     }
 
     public void reload(FileConfiguration config) {
-        i0 = safeBuild(config.getConfigurationSection("slot-item.0"));
-        i1 = safeBuild(config.getConfigurationSection("slot-item.1"));
-        i2 = safeBuild(config.getConfigurationSection("slot-item.2"));
-        i3 = safeBuild(config.getConfigurationSection("slot-item.3"));
-        i4 = safeBuild(config.getConfigurationSection("slot-item.4"));
+        i0 = safeBuild(config, "slot-item.0");
+        i1 = safeBuild(config, "slot-item.1");
+        i2 = safeBuild(config, "slot-item.2");
+        i3 = safeBuild(config, "slot-item.3");
+        i4 = safeBuild(config, "slot-item.4");
     }
 
-    private ItemStack safeBuild(org.bukkit.configuration.ConfigurationSection section) {
-        return ItemBuilder.build(section);
+    private static ItemStack safeBuild(FileConfiguration config, String path) {
+        ItemStack item = ItemBuilder.build(config.getConfigurationSection(path));
+        return nonNull(item);
+    }
+
+    private static ItemStack nonNull(ItemStack item) {
+        return item != null ? item : new ItemStack(Material.AIR);
     }
 }

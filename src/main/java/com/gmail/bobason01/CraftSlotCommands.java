@@ -1,5 +1,7 @@
 package com.gmail.bobason01;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.command.*;
 import org.bukkit.entity.Player;
@@ -11,9 +13,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import javax.annotation.Nonnull;
 import java.util.*;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-
 public class CraftSlotCommands extends JavaPlugin implements Listener {
 
 	public static CraftSlotCommands plugin;
@@ -24,11 +23,8 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 		plugin = this;
 		saveDefaultConfig();
 
-		CSCCommand command = new CSCCommand();
-		Objects.requireNonNull(getCommand("craftslotcommands")).setExecutor(command);
-		Objects.requireNonNull(getCommand("craftslotcommands")).setTabCompleter(command);
-
-		getServer().getPluginManager().registerEvents(this, this);
+		registerCommand();
+		registerListeners();
 
 		if (getConfig().getBoolean("items-enabled")) {
 			csil = new CraftSlotItemsListener(getConfig());
@@ -39,13 +35,32 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 	@Override
 	public void onDisable() {
 		Bukkit.getOnlinePlayers().stream()
-				.filter(p -> is2x2Crafting(p.getOpenInventory().getTopInventory()))
-				.forEach(p -> CraftSlotItemsListener.removeCommandItems(p.getOpenInventory()));
+				.map(Player::getOpenInventory) // InventoryView
+				.filter(Objects::nonNull)
+				.filter(view -> is2x2Crafting(view.getTopInventory())) // 검사만 topInventory 사용
+				.forEach(CraftSlotItemsListener::removeCommandItems); // InventoryView 그대로 전달
 	}
 
 	private void reload() {
 		reloadConfig();
-		if (csil != null) csil.reload(getConfig());
+		if (csil != null) {
+			csil.reload(getConfig());
+		}
+	}
+
+	private void registerCommand() {
+		CSCCommand command = new CSCCommand();
+		PluginCommand cmd = getCommand("craftslotcommands");
+		if (cmd != null) {
+			cmd.setExecutor(command);
+			cmd.setTabCompleter(command);
+		} else {
+			getLogger().warning("Command 'craftslotcommands' not found in plugin.yml!");
+		}
+	}
+
+	private void registerListeners() {
+		getServer().getPluginManager().registerEvents(this, this);
 	}
 
 	@EventHandler
@@ -53,11 +68,12 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 		if (!isValidSlotClick(e)) return;
 
 		e.setCancelled(true);
+
 		Player player = (Player) e.getWhoClicked();
 		int slot = e.getSlot();
-
 		String cmd = getConfig().getString("crafting-slot." + slot);
-		if (cmd == null || cmd.isEmpty()) return;
+
+		if (cmd == null || cmd.isBlank()) return;
 
 		Bukkit.getScheduler().runTask(this, () -> {
 			if (cmd.startsWith("*")) {
@@ -69,9 +85,12 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 	}
 
 	private boolean isValidSlotClick(InventoryClickEvent e) {
-		return e.getInventory() instanceof CraftingInventory && e.getInventory().getSize() == 5
-				&& e.getSlot() >= 0 && e.getSlot() <= 4
-				&& switch (e.getSlotType()) {
+		Inventory inv = e.getInventory();
+		if (!(inv instanceof CraftingInventory) || inv.getSize() != 5) return false;
+		int slot = e.getSlot();
+		if (slot < 0 || slot > 4) return false;
+
+		return switch (e.getSlotType()) {
 			case CONTAINER, ARMOR, FUEL, OUTSIDE, QUICKBAR -> false;
 			default -> true;
 		};
@@ -94,7 +113,7 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 				plugin.reload();
 				sendPrefixed(sender, Component.text("Successfully reloaded.", NamedTextColor.GREEN));
 			} else {
-				sendPrefixed(sender, Component.text("Version 2.0", NamedTextColor.GREEN));
+				sendPrefixed(sender, Component.text("CraftSlotCommands Version 2.0", NamedTextColor.AQUA));
 			}
 
 			return true;
@@ -102,7 +121,10 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 
 		@Override
 		public List<String> onTabComplete(@Nonnull CommandSender sender, @Nonnull Command command, @Nonnull String alias, String[] args) {
-			return args.length == 1 ? Collections.singletonList("reload") : Collections.emptyList();
+			if (args.length == 1) {
+				return Collections.singletonList("reload");
+			}
+			return Collections.emptyList();
 		}
 
 		private void sendPrefixed(CommandSender sender, Component message) {

@@ -34,9 +34,7 @@ public class CraftSlotItemsListener implements Listener {
     @EventHandler
     public void onRecipeClick(PlayerRecipeBookClickEvent e) {
         InventoryView view = e.getPlayer().getOpenInventory();
-        if (isSelf2x2Crafting(view)) {
-            e.setCancelled(true);
-        }
+        if (isSelf2x2Crafting(view)) e.setCancelled(true);
     }
 
     @EventHandler
@@ -56,19 +54,25 @@ public class CraftSlotItemsListener implements Listener {
     }
 
     @EventHandler
+    public void onInventoryOpen(InventoryOpenEvent e) {
+        Player player = (Player) e.getPlayer();
+        InventoryView view = player.getOpenInventory();
+        if (!isSelf2x2Crafting(view)) return;
+        removeCommandItems(view);
+    }
+
+    @EventHandler
     public void onPlayerQuit(PlayerQuitEvent e) {
         InventoryView view = e.getPlayer().getOpenInventory();
-        if (isSelf2x2Crafting(view)) {
-            removeCommandItems(view);
-        }
+        if (!isSelf2x2Crafting(view)) return;
+        removeCommandItems(view);
     }
 
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent e) {
         InventoryView view = e.getEntity().getOpenInventory();
-        if (isSelf2x2Crafting(view)) {
-            removeCommandItems(view);
-        }
+        if (!isSelf2x2Crafting(view)) return;
+        removeCommandItems(view);
     }
 
     private boolean isSelf2x2Crafting(InventoryView view) {
@@ -90,16 +94,16 @@ public class CraftSlotItemsListener implements Listener {
 
     private void addCommandItems(InventoryView view) {
         Inventory inv = view.getTopInventory();
+        boolean updated = false;
 
-        // 먼저 1~4번 커맨드 아이템을 채운다
         for (int slot : COMMAND_SLOTS) {
             ItemStack current = inv.getItem(slot);
             if (current == null || current.getType().isAir()) {
                 inv.setItem(slot, items[slot]);
+                updated = true;
             }
         }
 
-        // 슬롯 1~4가 모두 채워졌을 때만 0번을 세팅
         boolean showResultSlot = true;
         for (int i = 1; i <= 4; i++) {
             ItemStack item = inv.getItem(i);
@@ -108,11 +112,15 @@ public class CraftSlotItemsListener implements Listener {
                 break;
             }
         }
-        if (showResultSlot && (inv.getItem(0) == null || Objects.requireNonNull(inv.getItem(0)).getType().isAir())) {
-            inv.setItem(0, items[0]);
-        }
 
-        if (view.getPlayer() instanceof Player player) {
+        if (showResultSlot) {
+            ItemStack resultSlot = inv.getItem(0);
+            if (resultSlot == null || resultSlot.getType().isAir()) {
+                inv.setItem(0, items[0]);
+                updated = true;
+            }
+        }
+        if (updated && view.getPlayer() instanceof Player player) {
             player.updateInventory();
         }
     }

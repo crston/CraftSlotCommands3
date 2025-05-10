@@ -1,0 +1,165 @@
+package com.gmail.bobason01.util;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.Damageable;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
+
+import java.lang.reflect.Field;
+import java.util.*;
+
+public class ItemBuilder {
+
+    private static final MiniMessage MM = MiniMessage.miniMessage();
+    private static final ItemStack ERROR_ITEM;
+
+    static {
+        // 미리 만들어진 에러 아이템 (캐시)
+        ItemStack item = new ItemStack(Material.BARRIER);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Component.text("ERROR!", NamedTextColor.DARK_RED));
+            meta.lore(List.of(Component.text("Check config", NamedTextColor.RED)));
+            item.setItemMeta(meta);
+        }
+        ERROR_ITEM = item;
+    }
+
+    // 캐시된 아이템들 (Immutable 원본 저장)
+    private static final Map<String, ItemStack> CACHE = new HashMap<>();
+
+    public static void loadFromConfig(ConfigurationSection root) {
+        CACHE.clear();
+        for (String key : root.getKeys(false)) {
+            ConfigurationSection section = root.getConfigurationSection(key);
+            if (section == null) continue;
+
+            try {
+                CACHE.put(key, buildRaw(section));
+            } catch (Exception e) {
+                log("Failed to build item for: " + key + " - " + e.getMessage());
+                CACHE.put(key, ERROR_ITEM.clone());
+            }
+        }
+    }
+
+    public static ItemStack get(String key) {
+        ItemStack original = CACHE.get(key);
+        return original != null ? original.clone() : ERROR_ITEM.clone();
+    }
+
+    private static ItemStack buildRaw(ConfigurationSection config) {
+        Material mat = Material.matchMaterial(config.getString("material", "BARRIER"));
+        if (mat == null) throw new IllegalArgumentException("Invalid material");
+
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return ERROR_ITEM;
+
+        if (config.contains("name")) {
+            meta.displayName(parse(config.getString("name")));
+        }
+
+        if (config.contains("model")) {
+            meta.setCustomModelData(config.getInt("model"));
+        }
+
+        if (config.getBoolean("hide-flags")) {
+            meta.addItemFlags(org.bukkit.inventory.ItemFlag.values());
+        }
+
+        if (config.getBoolean("unbreakable")) {
+            meta.setUnbreakable(true);
+        }
+
+        if (meta instanceof Damageable dmg && config.contains("damage")) {
+            dmg.setDamage(config.getInt("damage"));
+        }
+
+        if (meta instanceof SkullMeta skullMeta) {
+            applySkullMeta(skullMeta, config);
+        }
+
+        if (config.contains("lore")) {
+            meta.lore(config.getStringList("lore").stream().map(ItemBuilder::parse).toList());
+        }
+
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private static void applySkullMeta(SkullMeta meta, ConfigurationSection config) {
+        try {
+            if (config.contains("skull-owner-uuid")) {
+                UUID uuid = UUID.fromString(Objects.requireNonNull(config.getString("skull-owner-uuid")));
+                OfflinePlayer owner = Bukkit.getOfflinePlayer(uuid);
+                meta.setOwningPlayer(owner);
+            } else if (config.contains("skull-texture-value")) {
+                String texture = config.getString("skull-texture-value");
+                if (texture != null && !texture.isBlank()) {
+                    var profile = new com.mojang.authlib.GameProfile(UUID.randomUUID(), null);
+                    profile.getProperties().put("textures", new com.mojang.authlib.properties.Property("textures", texture));
+                    Field field = meta.getClass().getDeclaredField("profile");
+                    field.setAccessible(true);
+                    field.set(meta, profile);
+                }
+            }
+        } catch (Exception e) {
+            log("Failed skull meta: " + e.getMessage());
+        }
+    }
+
+    private static Component parse(String legacy) {
+        if (legacy == null) return Component.empty();
+        return MM.deserialize(convertLegacyToMiniMessage(legacy));
+    }
+
+    private static String convertLegacyToMiniMessage(String input) {
+        StringBuilder sb = new StringBuilder("<italic:false>");
+        List<String> openTags = new ArrayList<>();
+
+        char[] chars = input.toCharArray();
+        for (int i = 0; i < chars.length; i++) {
+            if (chars[i] == '&' && i + 1 < chars.length) {
+                char code = Character.toLowerCase(chars[++i]);
+                String tag = LEGACY_MAP.get(code);
+                if (tag != null) {
+                    for (int j = openTags.size() - 1; j >= 0; j--) sb.append("</").append(openTags.get(j)).append(">");
+                    openTags.clear();
+                    String tagName = tag.replace("<", "").replace(">", "");
+                    sb.append(tag).append("<italic:false>");
+                    openTags.add(tagName);
+                    continue;
+                }
+            }
+            sb.append(chars[i]);
+        }
+        for (int j = openTags.size() - 1; j >= 0; j--) sb.append("</").append(openTags.get(j)).append(">");
+        return sb.toString();
+    }
+
+    private static final Map<Character, String> LEGACY_MAP = Map.ofEntries(
+            Map.entry('0', "<black>"), Map.entry('1', "<dark_blue>"),
+            Map.entry('2', "<dark_green>"), Map.entry('3', "<dark_aqua>"),
+            Map.entry('4', "<dark_red>"), Map.entry('5', "<dark_purple>"),
+            Map.entry('6', "<gold>"), Map.entry('7', "<gray>"),
+            Map.entry('8', "<dark_gray>"), Map.entry('9', "<blue>"),
+            Map.entry('a', "<green>"), Map.entry('b', "<aqua>"),
+            Map.entry('c', "<red>"), Map.entry('d', "<light_purple>"),
+            Map.entry('e', "<yellow>"), Map.entry('f', "<white>"),
+            Map.entry('l', "<bold>"), Map.entry('m', "<strikethrough>"),
+            Map.entry('n', "<underlined>"), Map.entry('o', "<italic>"),
+            Map.entry('r', "<reset>")
+    );
+
+    private static void log(String msg) {
+        Bukkit.getLogger().warning("[ItemBuilder] " + msg);
+    }
+}

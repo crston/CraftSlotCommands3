@@ -1,143 +1,132 @@
 package com.gmail.bobason01;
 
+import com.gmail.bobason01.listener.CraftSlotItemsListener;
+import com.gmail.bobason01.util.ItemBuilder;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.command.*;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
-import org.bukkit.event.*;
-import org.bukkit.event.inventory.*;
-import org.bukkit.inventory.*;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import javax.annotation.Nonnull;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
 
 public class CraftSlotCommands extends JavaPlugin implements Listener {
 
-	public static CraftSlotCommands plugin;
-	private CraftSlotItemsListener csil;
+    private static CraftSlotCommands instance;
+    private CraftSlotItemsListener craftSlotItemsListener;
 
-	@Override
-	public void onEnable() {
-		plugin = this;
-		saveDefaultConfig();
+    public static CraftSlotCommands getInstance() {
+        return instance;
+    }
 
-		registerCommand();
-		registerListeners();
+    @Override
+    public void onEnable() {
+        instance = this;
+        saveDefaultConfig();
+        registerCommand();
+        registerEvents();
 
-		if (getConfig().getBoolean("items-enabled")) {
-			csil = new CraftSlotItemsListener(getConfig());
-			getServer().getPluginManager().registerEvents(csil, this);
-		}
-	}
+        if (getConfig().getBoolean("items-enabled", true)) {
+            ConfigurationSection slotItems = getConfig().getConfigurationSection("slot-item");
+            if (slotItems != null) {
+                ItemBuilder.loadFromConfig(slotItems);
+            }
+            craftSlotItemsListener = new CraftSlotItemsListener(getConfig());
+            Bukkit.getPluginManager().registerEvents(craftSlotItemsListener, this);
+        }
+    }
 
-	@Override
-	public void onDisable() {
-		Bukkit.getOnlinePlayers().stream()
-				.map(Player::getOpenInventory) // InventoryView
-				.filter(Objects::nonNull)
-				.filter(view -> is2x2Crafting(view.getTopInventory())) // 검사만 topInventory 사용
-				.forEach(CraftSlotItemsListener::removeCommandItems); // InventoryView 그대로 전달
-	}
+    private void registerCommand() {
+        PluginCommand cmd = getCommand("craftslotcommands");
+        if (cmd != null) {
+            CSCCommand command = new CSCCommand();
+            cmd.setExecutor(command);
+            cmd.setTabCompleter(command);
+        } else {
+            getLogger().warning("Command 'craftslotcommands' not defined in plugin.yml!");
+        }
+    }
 
-	private void reload() {
-		reloadConfig();
-		if (csil != null) {
-			csil.reload(getConfig());
-		}
-	}
+    private void registerEvents() {
+        Bukkit.getPluginManager().registerEvents(this, this);
+    }
 
-	private void registerCommand() {
-		CSCCommand command = new CSCCommand();
-		PluginCommand cmd = getCommand("craftslotcommands");
-		if (cmd != null) {
-			cmd.setExecutor(command);
-			cmd.setTabCompleter(command);
-		} else {
-			getLogger().warning("Command 'craftslotcommands' not found in plugin.yml!");
-		}
-	}
+    public void reloadPlugin() {
+        reloadConfig();
+        ConfigurationSection slotItems = getConfig().getConfigurationSection("slot-item");
+        if (slotItems != null) {
+            ItemBuilder.loadFromConfig(slotItems);
+        }
+        if (craftSlotItemsListener != null) {
+            craftSlotItemsListener.reload(getConfig());
+        }
+    }
 
-	private void registerListeners() {
-		getServer().getPluginManager().registerEvents(this, this);
-	}
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (!(event.getInventory() instanceof CraftingInventory)) return;
 
-	@EventHandler
-	public void onInventoryClick(InventoryClickEvent e) {
-		if (!isValidSlotClick(e)) return;
+        int rawSlot = event.getRawSlot();
+        if (rawSlot < 0 || rawSlot > 4) return;
 
-		e.setCancelled(true);
+        String command = getConfig().getString("crafting-slot." + rawSlot);
+        if (command == null || command.isBlank()) return;
 
-		Player player = (Player) e.getWhoClicked();
-		int slot = e.getSlot();
-		String cmd = getConfig().getString("crafting-slot." + slot);
+        event.setCancelled(true);
+        Player player = (Player) event.getWhoClicked();
 
-		if (cmd == null || cmd.isBlank()) return;
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (command.startsWith("*")) {
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command.substring(1));
+            } else {
+                Bukkit.dispatchCommand(player, command);
+            }
+        });
+    }
 
-		Bukkit.getScheduler().runTask(this, () -> {
-			if (cmd.startsWith("*")) {
-				Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.substring(1));
-			} else {
-				Bukkit.dispatchCommand(player, cmd);
-			}
-		});
-	}
+    public static class CSCCommand implements CommandExecutor, TabCompleter {
 
-	private boolean isValidSlotClick(InventoryClickEvent e) {
-		Inventory inv = e.getInventory();
-		if (!(inv instanceof CraftingInventory) || inv.getSize() != 5) return false;
-		int slot = e.getSlot();
-		if (slot < 0 || slot > 4) return false;
+        @Override
+        public boolean onCommand(@Nonnull CommandSender sender, @Nonnull Command command, @Nonnull String label, @Nonnull String[] args) {
+            if (!sender.hasPermission("csc.admin")) {
+                send(sender, Component.text("You do not have permission.", NamedTextColor.RED));
+                return true;
+            }
 
-		return switch (e.getSlotType()) {
-			case CONTAINER, ARMOR, FUEL, OUTSIDE, QUICKBAR -> false;
-			default -> true;
-		};
-	}
+            if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
+                CraftSlotCommands.getInstance().reloadPlugin();
+                sendPrefixed(sender, Component.text("Reloaded successfully.", NamedTextColor.GREEN));
+            } else {
+                sendPrefixed(sender, Component.text("CraftSlotCommands3 v2.0", NamedTextColor.AQUA));
+            }
 
-	private boolean is2x2Crafting(Inventory inv) {
-		return inv instanceof CraftingInventory && inv.getSize() == 5;
-	}
+            return true;
+        }
 
-	public static class CSCCommand implements CommandExecutor, TabCompleter {
+        @Override
+        public List<String> onTabComplete(@Nonnull CommandSender sender, @Nonnull Command command, @Nonnull String alias, String[] args) {
+            if (args.length == 1) return List.of("reload");
+            return Collections.emptyList();
+        }
 
-		@Override
-		public boolean onCommand(CommandSender sender, @Nonnull Command command, @Nonnull String label, @Nonnull String[] args) {
-			if (!sender.hasPermission("csc.admin")) {
-				send(sender, Component.text("You do not have permission to use this command.", NamedTextColor.RED));
-				return true;
-			}
+        private void sendPrefixed(CommandSender sender, Component msg) {
+            send(sender, Component.text("[CSC] ", NamedTextColor.GRAY).append(msg));
+        }
 
-			if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
-				plugin.reload();
-				sendPrefixed(sender, Component.text("Successfully reloaded.", NamedTextColor.GREEN));
-			} else {
-				sendPrefixed(sender, Component.text("CraftSlotCommands Version 2.0", NamedTextColor.AQUA));
-			}
-
-			return true;
-		}
-
-		@Override
-		public List<String> onTabComplete(@Nonnull CommandSender sender, @Nonnull Command command, @Nonnull String alias, String[] args) {
-			if (args.length == 1) {
-				return Collections.singletonList("reload");
-			}
-			return Collections.emptyList();
-		}
-
-		private void sendPrefixed(CommandSender sender, Component message) {
-			Component prefix = Component.text("[CraftSlotCommands] ", NamedTextColor.AQUA);
-			send(sender, prefix.append(message));
-		}
-
-		private void send(CommandSender sender, Component message) {
-			if (sender instanceof Player player) {
-				player.sendMessage(message);
-			} else {
-				Bukkit.getConsoleSender().sendMessage(message);
-			}
-		}
-	}
+        private void send(CommandSender sender, Component msg) {
+            if (sender instanceof Player player) {
+                player.sendMessage(msg);
+            } else {
+                Bukkit.getConsoleSender().sendMessage(msg);
+            }
+        }
+    }
 }

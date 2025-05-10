@@ -12,11 +12,14 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.CraftingInventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import javax.annotation.Nonnull;
 import java.util.Collections;
 import java.util.List;
+
+import static com.gmail.bobason01.listener.CraftSlotItemsListener.isSelf2x2Crafting;
 
 public class CraftSlotCommands extends JavaPlugin implements Listener {
 
@@ -41,6 +44,16 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
             }
             craftSlotItemsListener = new CraftSlotItemsListener(getConfig());
             Bukkit.getPluginManager().registerEvents(craftSlotItemsListener, this);
+        }
+    }
+
+    @Override
+    public void onDisable() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            InventoryView view = player.getOpenInventory();
+            if (isSelf2x2Crafting(view)) {
+                CraftSlotItemsListener.removeFakeItems(view);
+            }
         }
     }
 

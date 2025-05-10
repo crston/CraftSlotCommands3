@@ -58,7 +58,7 @@ public class CraftSlotItemsListener implements Listener {
     public void onInventoryClick(InventoryClickEvent e) {
         InventoryView view = e.getView();
         if (isSelf2x2Crafting(view)) scheduleUpdate(view);
-        }
+    }
 
     @EventHandler
     public void onInventoryDrag(InventoryDragEvent e) {
@@ -76,7 +76,7 @@ public class CraftSlotItemsListener implements Listener {
         removeFakeItems(e.getEntity().getOpenInventory());
     }
 
-    private boolean isSelf2x2Crafting(InventoryView view) {
+    public static boolean isSelf2x2Crafting(InventoryView view) {
         Inventory inv = view.getTopInventory();
         if (!(inv instanceof CraftingInventory)) return false;
         if (inv.getSize() != 5) return false;
@@ -98,8 +98,11 @@ public class CraftSlotItemsListener implements Listener {
 
     private void addFakeItems(InventoryView view) {
         Inventory inv = view.getTopInventory();
+        int size = inv.getSize();
 
         for (int slot : COMMAND_SLOTS) {
+            if (slot >= size || slot >= items.length || items[slot] == null) continue;
+
             ItemStack current = inv.getItem(slot);
             if (current == null || current.getType().isAir()) {
                 inv.setItem(slot, items[slot]);
@@ -107,9 +110,9 @@ public class CraftSlotItemsListener implements Listener {
         }
 
         boolean showResult = Arrays.stream(COMMAND_SLOTS)
-                .allMatch(i -> inv.getItem(i) != null && !Objects.requireNonNull(inv.getItem(i)).getType().isAir());
+                .allMatch(i -> i < size && inv.getItem(i) != null && !Objects.requireNonNull(inv.getItem(i)).getType().isAir());
 
-        if (showResult) {
+        if (showResult && 0 < size && items[0] != null) {
             ItemStack result = inv.getItem(0);
             if (result == null || result.getType().isAir()) {
                 inv.setItem(0, items[0]);
@@ -119,7 +122,9 @@ public class CraftSlotItemsListener implements Listener {
 
     public static void removeFakeItems(InventoryView view) {
         Inventory inv = view.getTopInventory();
-        for (int i = 0; i <= 4; i++) {
+        int size = inv.getSize();
+
+        for (int i = 0; i <= 4 && i < size; i++) {
             ItemStack current = inv.getItem(i);
             if (isFakeItem(i, current)) {
                 inv.setItem(i, null);
@@ -128,6 +133,6 @@ public class CraftSlotItemsListener implements Listener {
     }
 
     private static boolean isFakeItem(int slot, ItemStack item) {
-        return item != null && item.isSimilar(items[slot]);
+        return slot < items.length && items[slot] != null && item != null && item.isSimilar(items[slot]);
     }
 }

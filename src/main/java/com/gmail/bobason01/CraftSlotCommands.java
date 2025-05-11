@@ -87,6 +87,9 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getInventory() instanceof CraftingInventory)) return;
 
+        InventoryView view = event.getView();
+        if (!isSelf2x2Crafting(view)) return;
+
         int rawSlot = event.getRawSlot();
         if (rawSlot < 0 || rawSlot > 4) return;
 

@@ -5,6 +5,7 @@ import com.gmail.bobason01.util.ItemBuilder;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.command.*;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
@@ -90,14 +91,18 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
         InventoryView view = event.getView();
         if (!isSelf2x2Crafting(view)) return;
 
+        Player player = (Player) event.getWhoClicked();
+        if (player.getGameMode() == GameMode.CREATIVE) return;
+
         int rawSlot = event.getRawSlot();
         if (rawSlot < 0 || rawSlot > 4) return;
+
+        if (CraftSlotItemsListener.useSlot(rawSlot)) return;
 
         String command = getConfig().getString("crafting-slot." + rawSlot);
         if (command == null || command.isBlank()) return;
 
         event.setCancelled(true);
-        Player player = (Player) event.getWhoClicked();
 
         Bukkit.getScheduler().runTask(this, () -> {
             if (command.startsWith("*")) {
@@ -121,7 +126,7 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
                 CraftSlotCommands.getInstance().reloadPlugin();
                 sendPrefixed(sender, Component.text("Reloaded successfully.", NamedTextColor.GREEN));
             } else {
-                sendPrefixed(sender, Component.text("CraftSlotCommands3 v2.0", NamedTextColor.AQUA));
+                sendPrefixed(sender, Component.text("CraftSlotCommands3", NamedTextColor.AQUA));
             }
 
             return true;
@@ -134,7 +139,7 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
         }
 
         private void sendPrefixed(CommandSender sender, Component msg) {
-            send(sender, Component.text("[CSC] ", NamedTextColor.GRAY).append(msg));
+            send(sender, Component.text("[CSC3] ", NamedTextColor.GRAY).append(msg));
         }
 
         private void send(CommandSender sender, Component msg) {

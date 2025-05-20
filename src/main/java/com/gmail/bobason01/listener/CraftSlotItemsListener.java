@@ -4,6 +4,8 @@ import com.destroystokyo.paper.event.player.PlayerRecipeBookClickEvent;
 import com.gmail.bobason01.CraftSlotCommands;
 import com.gmail.bobason01.util.ItemBuilder;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -20,8 +22,9 @@ import java.util.*;
 
 public class CraftSlotItemsListener implements Listener {
 
-    private static final int[] COMMAND_SLOTS = {1, 2, 3, 4}; // 입력 슬롯
-    private static final ItemStack[] items = new ItemStack[5]; // 0~4 전체 슬롯
+    private static final int[] COMMAND_SLOTS = {1, 2, 3, 4};
+    private static final ItemStack[] items = new ItemStack[5];
+    private static final boolean[] useSlot = new boolean[5];
     private final Set<UUID> pendingUpdate = Collections.newSetFromMap(new WeakHashMap<>());
 
     public CraftSlotItemsListener(FileConfiguration config) {
@@ -30,9 +33,16 @@ public class CraftSlotItemsListener implements Listener {
 
     public void reload(FileConfiguration config) {
         ItemBuilder.loadFromConfig(Objects.requireNonNull(config.getConfigurationSection("slot-item")));
+        ConfigurationSection useSlotSection = config.getConfigurationSection("use-slot");
+
         for (int i = 0; i <= 4; i++) {
             items[i] = ItemBuilder.get(String.valueOf(i));
+            useSlot[i] = useSlotSection != null && useSlotSection.getBoolean(String.valueOf(i), true);
         }
+    }
+
+    public static boolean useSlot(int i) {
+        return i < 0 || i >= useSlot.length || !useSlot[i];
     }
 
     @EventHandler
@@ -97,25 +107,40 @@ public class CraftSlotItemsListener implements Listener {
     }
 
     private void addFakeItems(InventoryView view) {
+        Player player = (Player) view.getPlayer();
+        if (player.getGameMode() == GameMode.CREATIVE) return;
+
         Inventory inv = view.getTopInventory();
         int size = inv.getSize();
 
         for (int slot : COMMAND_SLOTS) {
-            if (slot >= size || slot >= items.length || items[slot] == null) continue;
+            if (useSlot(slot) || slot >= size) continue;
+
+            ItemStack item = items[slot];
+            if (item == null) continue;
 
             ItemStack current = inv.getItem(slot);
             if (current == null || current.getType().isAir()) {
-                inv.setItem(slot, items[slot]);
+                inv.setItem(slot, item);
             }
         }
 
-        boolean showResult = Arrays.stream(COMMAND_SLOTS)
-                .allMatch(i -> i < size && inv.getItem(i) != null && !Objects.requireNonNull(inv.getItem(i)).getType().isAir());
+        if (useSlot[0] && items[0] != null && size > 0) {
+            boolean showResult = true;
+            for (int slot : COMMAND_SLOTS) {
+                if (useSlot(slot)) continue;
+                ItemStack i = inv.getItem(slot);
+                if (i == null || i.getType().isAir()) {
+                    showResult = false;
+                    break;
+                }
+            }
 
-        if (showResult && 0 < size && items[0] != null) {
-            ItemStack result = inv.getItem(0);
-            if (result == null || result.getType().isAir()) {
-                inv.setItem(0, items[0]);
+            if (showResult) {
+                ItemStack result = inv.getItem(0);
+                if (result == null || result.getType().isAir()) {
+                    inv.setItem(0, items[0]);
+                }
             }
         }
     }
@@ -125,14 +150,15 @@ public class CraftSlotItemsListener implements Listener {
         int size = inv.getSize();
 
         for (int i = 0; i <= 4 && i < size; i++) {
+            if (useSlot(i)) continue;
+
+            ItemStack expected = items[i];
+            if (expected == null) continue;
+
             ItemStack current = inv.getItem(i);
-            if (isFakeItem(i, current)) {
+            if (current != null && current.isSimilar(expected)) {
                 inv.setItem(i, null);
             }
         }
-    }
-
-    private static boolean isFakeItem(int slot, ItemStack item) {
-        return slot < items.length && items[slot] != null && item != null && item.isSimilar(items[slot]);
     }
 }

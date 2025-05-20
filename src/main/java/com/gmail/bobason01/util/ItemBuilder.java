@@ -6,7 +6,11 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -21,18 +25,16 @@ public class ItemBuilder {
     private static final ItemStack ERROR_ITEM;
 
     static {
-        // 미리 만들어진 에러 아이템 (캐시)
         ItemStack item = new ItemStack(Material.BARRIER);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.displayName(Component.text("ERROR!", NamedTextColor.DARK_RED));
+            meta.displayName(Component.text("ERROR", NamedTextColor.DARK_RED));
             meta.lore(List.of(Component.text("Check config", NamedTextColor.RED)));
             item.setItemMeta(meta);
         }
         ERROR_ITEM = item;
     }
 
-    // 캐시된 아이템들 (Immutable 원본 저장)
     private static final Map<String, ItemStack> CACHE = new HashMap<>();
 
     public static void loadFromConfig(ConfigurationSection root) {
@@ -63,30 +65,67 @@ public class ItemBuilder {
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return ERROR_ITEM;
 
+        // 이름
         if (config.contains("name")) {
             meta.displayName(parse(config.getString("name")));
         }
 
+        // 모델 ID
         if (config.contains("model")) {
             meta.setCustomModelData(config.getInt("model"));
         }
 
-        if (config.getBoolean("hide-flags")) {
-            meta.addItemFlags(org.bukkit.inventory.ItemFlag.values());
+        // HIDE FLAGS
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES); // 무조건 숨김
+        if (config.contains("hide-flags")) {
+            Object flagsObj = config.get("hide-flags");
+            if (flagsObj instanceof Boolean bool && bool) {
+                meta.addItemFlags(ItemFlag.values());
+            } else if (flagsObj instanceof List<?> list) {
+                for (Object obj : list) {
+                    if (obj instanceof String str) {
+                        try {
+                            ItemFlag flag = ItemFlag.valueOf(str.toUpperCase(Locale.ROOT));
+                            meta.addItemFlags(flag);
+                        } catch (IllegalArgumentException e) {
+                            log("Unknown ItemFlag: " + str);
+                        }
+                    }
+                }
+            }
         }
 
+        // 속성 무조건 0 으로 덮어쓰기
+        for (Attribute attribute : Attribute.values()) {
+            for (EquipmentSlot slot : EquipmentSlot.values()) {
+                AttributeModifier zeroMod = new AttributeModifier(
+                        UUID.nameUUIDFromBytes((attribute.name() + slot.name()).getBytes()),
+                        "zero_" + attribute.name().toLowerCase(),
+                        0.0,
+                        AttributeModifier.Operation.ADD_NUMBER,
+                        slot
+                );
+                meta.addAttributeModifier(attribute, zeroMod);
+            }
+        }
+
+        // 내구성
         if (config.getBoolean("unbreakable")) {
             meta.setUnbreakable(true);
+            meta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
         }
 
+        // 데미지 설정
         if (meta instanceof Damageable dmg && config.contains("damage")) {
             dmg.setDamage(config.getInt("damage"));
         }
 
+        // 스컬 처리
         if (meta instanceof SkullMeta skullMeta) {
             applySkullMeta(skullMeta, config);
         }
 
+        // 설명
         if (config.contains("lore")) {
             meta.lore(config.getStringList("lore").stream().map(ItemBuilder::parse).toList());
         }
@@ -160,6 +199,6 @@ public class ItemBuilder {
     );
 
     private static void log(String msg) {
-        Bukkit.getLogger().warning("[ItemBuilder] " + msg);
+        Bukkit.getLogger().warning("[CSC3] " + msg);
     }
 }

@@ -51,6 +51,7 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         for (Player player : Bukkit.getOnlinePlayers()) {
+            player.closeInventory();
             InventoryView view = player.getOpenInventory();
             if (isSelf2x2Crafting(view)) {
                 CraftSlotItemsListener.removeFakeItems(view);

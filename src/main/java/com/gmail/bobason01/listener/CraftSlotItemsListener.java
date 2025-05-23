@@ -51,13 +51,6 @@ public class CraftSlotItemsListener implements Listener {
     }
 
     @EventHandler
-    public void onInventoryOpen(InventoryOpenEvent e) {
-        InventoryView view = e.getPlayer().getOpenInventory();
-        if (isSelf2x2Crafting(view)) scheduleUpdate(view);
-        removeFakeItems(view);
-    }
-
-    @EventHandler
     public void onInventoryClose(InventoryCloseEvent e) {
         InventoryView view = e.getPlayer().getOpenInventory();
         if (isSelf2x2Crafting(view)) scheduleUpdate(view);
@@ -67,7 +60,7 @@ public class CraftSlotItemsListener implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent e) {
         InventoryView view = e.getView();
-        if (isSelf2x2Crafting(view)) scheduleUpdate(view);
+        if (isSelf2x2Crafting(view)) e.setCancelled(true);
     }
 
     @EventHandler

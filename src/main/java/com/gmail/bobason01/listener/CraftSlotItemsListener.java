@@ -19,13 +19,14 @@ import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CraftSlotItemsListener implements Listener {
 
     private static final int[] COMMAND_SLOTS = {1, 2, 3, 4};
     private static final ItemStack[] items = new ItemStack[5];
     private static final boolean[] useSlot = new boolean[5];
-    private final Set<UUID> pendingUpdate = Collections.newSetFromMap(new WeakHashMap<>());
+    private final Set<UUID> pendingUpdate = ConcurrentHashMap.newKeySet();
 
     public CraftSlotItemsListener(FileConfiguration config) {
         reload(config);
@@ -60,7 +61,7 @@ public class CraftSlotItemsListener implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent e) {
         InventoryView view = e.getView();
-        if (isSelf2x2Crafting(view)) e.setCancelled(true);
+        if (isSelf2x2Crafting(view)) scheduleUpdate(view);
     }
 
     @EventHandler

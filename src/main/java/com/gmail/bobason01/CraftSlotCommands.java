@@ -38,6 +38,12 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
         registerCommand();
         registerEvents();
 
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.closeInventory();
+            InventoryView view = player.getOpenInventory();
+            CraftSlotItemsListener.removeFakeItems(view);
+        }
+
         if (getConfig().getBoolean("items-enabled", true)) {
             ConfigurationSection slotItems = getConfig().getConfigurationSection("slot-item");
             if (slotItems != null) {
@@ -51,11 +57,9 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         for (Player player : Bukkit.getOnlinePlayers()) {
-            InventoryView view = player.getOpenInventory();
-            if (isSelf2x2Crafting(view)) {
-                CraftSlotItemsListener.removeFakeItems(view);
-            }
             player.closeInventory();
+            InventoryView view = player.getOpenInventory();
+            CraftSlotItemsListener.removeFakeItems(view);
         }
     }
 

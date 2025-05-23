@@ -84,6 +84,7 @@ public class CraftSlotItemsListener implements Listener {
         Inventory inv = view.getTopInventory();
         if (!(inv instanceof CraftingInventory)) return false;
         if (inv.getSize() != 5) return false;
+        if (inv.getType() != InventoryType.CRAFTING) return false;
         return view.getPlayer() instanceof Player p && Objects.equals(inv.getHolder(), p);
     }
 

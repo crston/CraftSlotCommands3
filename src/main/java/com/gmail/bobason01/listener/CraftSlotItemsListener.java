@@ -23,10 +23,13 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class CraftSlotItemsListener implements Listener {
 
-    private static final int[] COMMAND_SLOTS = {1, 2, 3, 4};
+    private static final List<Integer> COMMAND_SLOTS = List.of(1, 2, 3, 4);
     private static final ItemStack[] items = new ItemStack[5];
     private static final boolean[] useSlot = new boolean[5];
     private final Set<UUID> pendingUpdate = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Long> lastUpdateTime = new ConcurrentHashMap<>();
+    private int debounceMs = 100;
+    private boolean skipCreative = true;
 
     public CraftSlotItemsListener(FileConfiguration config) {
         reload(config);
@@ -39,6 +42,12 @@ public class CraftSlotItemsListener implements Listener {
         for (int i = 0; i <= 4; i++) {
             items[i] = ItemBuilder.get(String.valueOf(i));
             useSlot[i] = useSlotSection != null && useSlotSection.getBoolean(String.valueOf(i), true);
+        }
+
+        ConfigurationSection opt = config.getConfigurationSection("optimize");
+        if (opt != null) {
+            debounceMs = opt.getInt("debounce-ms", 100);
+            skipCreative = opt.getBoolean("skip-creative", true);
         }
     }
 
@@ -72,12 +81,14 @@ public class CraftSlotItemsListener implements Listener {
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent e) {
-        removeFakeItems(e.getPlayer().getOpenInventory());
+        InventoryView view = e.getPlayer().getOpenInventory();
+        if (isSelf2x2Crafting(view)) removeFakeItems(view);
     }
 
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent e) {
-        removeFakeItems(e.getEntity().getOpenInventory());
+        InventoryView view = e.getEntity().getOpenInventory();
+        if (isSelf2x2Crafting(view)) removeFakeItems(view);
     }
 
     public static boolean isSelf2x2Crafting(InventoryView view) {
@@ -90,10 +101,18 @@ public class CraftSlotItemsListener implements Listener {
 
     private void scheduleUpdate(InventoryView view) {
         Player player = (Player) view.getPlayer();
-        if (!pendingUpdate.add(player.getUniqueId())) return;
+        UUID uuid = player.getUniqueId();
+
+        long now = System.currentTimeMillis();
+        long last = lastUpdateTime.getOrDefault(uuid, 0L);
+
+        if (now - last < debounceMs) return;
+
+        lastUpdateTime.put(uuid, now);
+        if (!pendingUpdate.add(uuid)) return;
 
         Bukkit.getScheduler().runTaskLater(CraftSlotCommands.getInstance(), () -> {
-            pendingUpdate.remove(player.getUniqueId());
+            pendingUpdate.remove(uuid);
             if (isSelf2x2Crafting(view)) {
                 removeFakeItems(view);
                 addFakeItems(view);
@@ -103,7 +122,7 @@ public class CraftSlotItemsListener implements Listener {
 
     private void addFakeItems(InventoryView view) {
         Player player = (Player) view.getPlayer();
-        if (player.getGameMode() == GameMode.CREATIVE) return;
+        if (skipCreative && player.getGameMode() == GameMode.CREATIVE) return;
 
         Inventory inv = view.getTopInventory();
         int size = inv.getSize();
@@ -120,7 +139,7 @@ public class CraftSlotItemsListener implements Listener {
             }
         }
 
-        if (useSlot[0] && items[0] != null && size > 0) {
+        if (items[0] != null && size > 0) {
             boolean showResult = true;
             for (int slot : COMMAND_SLOTS) {
                 if (useSlot(slot)) continue;
@@ -142,8 +161,9 @@ public class CraftSlotItemsListener implements Listener {
 
     public static void removeFakeItems(InventoryView view) {
         Inventory inv = view.getTopInventory();
-        int size = inv.getSize();
+        if (!(inv instanceof CraftingInventory)) return;
 
+        int size = inv.getSize();
         for (int i = 0; i <= 4 && i < size; i++) {
             if (useSlot(i)) continue;
 
@@ -151,7 +171,7 @@ public class CraftSlotItemsListener implements Listener {
             if (expected == null) continue;
 
             ItemStack current = inv.getItem(i);
-            if (current != null && current.isSimilar(expected)) {
+            if (current != null && current.getType() == expected.getType() && current.isSimilar(expected)) {
                 inv.setItem(i, null);
             }
         }

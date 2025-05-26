@@ -18,11 +18,16 @@ import org.bukkit.inventory.meta.SkullMeta;
 
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ItemBuilder {
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final ItemStack ERROR_ITEM;
+
+    private static final Map<String, ItemStack> CACHE = new HashMap<>();
+    private static final Map<String, AttributeModifier> ZERO_MODIFIERS = new ConcurrentHashMap<>();
+    private static Field skullProfileField;
 
     static {
         ItemStack item = new ItemStack(Material.BARRIER);
@@ -33,9 +38,15 @@ public class ItemBuilder {
             item.setItemMeta(meta);
         }
         ERROR_ITEM = item;
-    }
 
-    private static final Map<String, ItemStack> CACHE = new HashMap<>();
+        try {
+            skullProfileField = Class.forName("org.bukkit.craftbukkit." + Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3] + ".inventory.CraftMetaSkull")
+                    .getDeclaredField("profile");
+            skullProfileField.setAccessible(true);
+        } catch (Exception e) {
+            log("Failed to initialize skull profile field: " + e.getMessage());
+        }
+    }
 
     public static void loadFromConfig(ConfigurationSection root) {
         CACHE.clear();
@@ -63,20 +74,12 @@ public class ItemBuilder {
 
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
-        if (meta == null) return ERROR_ITEM;
+        if (meta == null) return ERROR_ITEM.clone();
 
-        // 이름
-        if (config.contains("name")) {
-            meta.displayName(parse(config.getString("name")));
-        }
+        if (config.contains("name")) meta.displayName(parse(config.getString("name")));
+        if (config.contains("model")) meta.setCustomModelData(config.getInt("model"));
 
-        // 모델 ID
-        if (config.contains("model")) {
-            meta.setCustomModelData(config.getInt("model"));
-        }
-
-        // HIDE FLAGS
-        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES); // 무조건 숨김
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
         if (config.contains("hide-flags")) {
             Object flagsObj = config.get("hide-flags");
             if (flagsObj instanceof Boolean bool && bool) {
@@ -85,8 +88,7 @@ public class ItemBuilder {
                 for (Object obj : list) {
                     if (obj instanceof String str) {
                         try {
-                            ItemFlag flag = ItemFlag.valueOf(str.toUpperCase(Locale.ROOT));
-                            meta.addItemFlags(flag);
+                            meta.addItemFlags(ItemFlag.valueOf(str.toUpperCase(Locale.ROOT)));
                         } catch (IllegalArgumentException e) {
                             log("Unknown ItemFlag: " + str);
                         }
@@ -95,37 +97,29 @@ public class ItemBuilder {
             }
         }
 
-        // 속성 무조건 0 으로 덮어쓰기
         for (Attribute attribute : Attribute.values()) {
             for (EquipmentSlot slot : EquipmentSlot.values()) {
-                AttributeModifier zeroMod = new AttributeModifier(
-                        UUID.nameUUIDFromBytes((attribute.name() + slot.name()).getBytes()),
-                        "zero_" + attribute.name().toLowerCase(),
-                        0.0,
-                        AttributeModifier.Operation.ADD_NUMBER,
-                        slot
-                );
-                meta.addAttributeModifier(attribute, zeroMod);
+                String key = attribute.name() + ":" + slot.name();
+                AttributeModifier mod = ZERO_MODIFIERS.computeIfAbsent(key, k ->
+                        new AttributeModifier(UUID.nameUUIDFromBytes(k.getBytes()), "zero_" + attribute.name().toLowerCase(), 0.0,
+                                AttributeModifier.Operation.ADD_NUMBER, slot));
+                meta.addAttributeModifier(attribute, mod);
             }
         }
 
-        // 내구성
         if (config.getBoolean("unbreakable")) {
             meta.setUnbreakable(true);
             meta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
         }
 
-        // 데미지 설정
         if (meta instanceof Damageable dmg && config.contains("damage")) {
             dmg.setDamage(config.getInt("damage"));
         }
 
-        // 스컬 처리
         if (meta instanceof SkullMeta skullMeta) {
             applySkullMeta(skullMeta, config);
         }
 
-        // 설명
         if (config.contains("lore")) {
             meta.lore(config.getStringList("lore").stream().map(ItemBuilder::parse).toList());
         }
@@ -145,9 +139,9 @@ public class ItemBuilder {
                 if (texture != null && !texture.isBlank()) {
                     var profile = new com.mojang.authlib.GameProfile(UUID.randomUUID(), null);
                     profile.getProperties().put("textures", new com.mojang.authlib.properties.Property("textures", texture));
-                    Field field = meta.getClass().getDeclaredField("profile");
-                    field.setAccessible(true);
-                    field.set(meta, profile);
+                    if (skullProfileField != null) {
+                        skullProfileField.set(meta, profile);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -163,7 +157,6 @@ public class ItemBuilder {
     private static String convertLegacyToMiniMessage(String input) {
         StringBuilder sb = new StringBuilder("<italic:false>");
         List<String> openTags = new ArrayList<>();
-
         char[] chars = input.toCharArray();
         for (int i = 0; i < chars.length; i++) {
             if (chars[i] == '&' && i + 1 < chars.length) {

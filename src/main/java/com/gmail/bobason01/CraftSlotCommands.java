@@ -1,19 +1,19 @@
 package com.gmail.bobason01;
 
 import com.gmail.bobason01.listener.CraftSlotItemsListener;
-import com.gmail.bobason01.util.ItemBuilder;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.command.*;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.CraftingInventory;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import javax.annotation.Nonnull;
@@ -26,6 +26,7 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 
     private static CraftSlotCommands instance;
     private CraftSlotItemsListener craftSlotItemsListener;
+    private boolean skipCreativeClick = true;
 
     public static CraftSlotCommands getInstance() {
         return instance;
@@ -39,20 +40,27 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
         registerEvents();
 
         if (getConfig().getBoolean("items-enabled", true)) {
-            ConfigurationSection slotItems = getConfig().getConfigurationSection("slot-item");
-            if (slotItems != null) {
-                ItemBuilder.loadFromConfig(slotItems);
-            }
             craftSlotItemsListener = new CraftSlotItemsListener(getConfig());
             Bukkit.getPluginManager().registerEvents(craftSlotItemsListener, this);
         }
+
+        skipCreativeClick = getConfig().getBoolean("optimize.skip-creative", true);
     }
 
     @Override
     public void onDisable() {
         for (Player player : Bukkit.getOnlinePlayers()) {
+            InventoryView view = player.getOpenInventory();
+            if (isSelf2x2Crafting(view)) {
+                Inventory inv = view.getTopInventory();
+                for (int i = 0; i <= 4; i++) {
+                    ItemStack item = inv.getItem(i);
+                    if (item != null && item.equals(view.getItem(i))) {
+                        inv.setItem(i, null); // ensure no menu item remains
+                    }
+                }
+            }
             player.closeInventory();
-            CraftSlotItemsListener.removeFakeItems(player.getOpenInventory());
         }
     }
 
@@ -73,10 +81,6 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 
     public void reloadPlugin() {
         reloadConfig();
-        ConfigurationSection slotItems = getConfig().getConfigurationSection("slot-item");
-        if (slotItems != null) {
-            ItemBuilder.loadFromConfig(slotItems);
-        }
         if (craftSlotItemsListener != null) {
             craftSlotItemsListener.reload(getConfig());
         }
@@ -90,7 +94,7 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
         if (!isSelf2x2Crafting(view)) return;
 
         Player player = (Player) event.getWhoClicked();
-        if (player.getGameMode() == GameMode.CREATIVE) return;
+        if (skipCreativeClick && player.getGameMode() == GameMode.CREATIVE) return;
 
         int rawSlot = event.getRawSlot();
         if (rawSlot < 0 || rawSlot > 4) return;

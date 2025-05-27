@@ -5,7 +5,6 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.configuration.ConfigurationSection;
@@ -14,9 +13,7 @@ import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.SkullMeta;
 
-import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -24,12 +21,11 @@ public class ItemBuilder {
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final ItemStack ERROR_ITEM;
-
     private static final Map<String, ItemStack> CACHE = new HashMap<>();
     private static final Map<String, AttributeModifier> ZERO_MODIFIERS = new ConcurrentHashMap<>();
-    private static Field skullProfileField;
 
     static {
+        // Default error item
         ItemStack item = new ItemStack(Material.BARRIER);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
@@ -38,14 +34,6 @@ public class ItemBuilder {
             item.setItemMeta(meta);
         }
         ERROR_ITEM = item;
-
-        try {
-            skullProfileField = Class.forName("org.bukkit.craftbukkit." + Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3] + ".inventory.CraftMetaSkull")
-                    .getDeclaredField("profile");
-            skullProfileField.setAccessible(true);
-        } catch (Exception e) {
-            log("Failed to initialize skull profile field: " + e.getMessage());
-        }
     }
 
     public static void loadFromConfig(ConfigurationSection root) {
@@ -57,7 +45,7 @@ public class ItemBuilder {
             try {
                 CACHE.put(key, buildRaw(section));
             } catch (Exception e) {
-                log("Failed to build item for: " + key + " - " + e.getMessage());
+                log("Failed to build item for: " + key + " - " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
                 CACHE.put(key, ERROR_ITEM.clone());
             }
         }
@@ -69,29 +57,41 @@ public class ItemBuilder {
     }
 
     private static ItemStack buildRaw(ConfigurationSection config) {
-        Material mat = Material.matchMaterial(config.getString("material", "BARRIER"));
-        if (mat == null) throw new IllegalArgumentException("Invalid material");
+        String materialName = config.getString("material");
+        if (materialName == null || materialName.isBlank()) {
+            throw new IllegalArgumentException("Missing or blank material name");
+        }
+
+        Material mat = Material.matchMaterial(materialName);
+        if (mat == null) throw new IllegalArgumentException("Invalid material: " + materialName);
 
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return ERROR_ITEM.clone();
 
         if (config.contains("name")) meta.displayName(parse(config.getString("name")));
-        if (config.contains("model")) meta.setCustomModelData(config.getInt("model"));
+
+        // Safely set CustomModelData
+        if (config.contains("model")) {
+            try {
+                meta.setCustomModelData(config.getInt("model"));
+            } catch (Exception e) {
+                log("CustomModelData not supported on material: " + mat);
+            }
+        }
 
         meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
-        if (config.contains("hide-flags")) {
-            Object flagsObj = config.get("hide-flags");
-            if (flagsObj instanceof Boolean bool && bool) {
-                meta.addItemFlags(ItemFlag.values());
-            } else if (flagsObj instanceof List<?> list) {
-                for (Object obj : list) {
-                    if (obj instanceof String str) {
-                        try {
-                            meta.addItemFlags(ItemFlag.valueOf(str.toUpperCase(Locale.ROOT)));
-                        } catch (IllegalArgumentException e) {
-                            log("Unknown ItemFlag: " + str);
-                        }
+
+        Object flagsObj = config.get("hide-flags");
+        if (flagsObj instanceof Boolean bool && bool) {
+            meta.addItemFlags(ItemFlag.values());
+        } else if (flagsObj instanceof List<?> list) {
+            for (Object obj : list) {
+                if (obj instanceof String str) {
+                    try {
+                        meta.addItemFlags(ItemFlag.valueOf(str.toUpperCase(Locale.ROOT)));
+                    } catch (IllegalArgumentException e) {
+                        log("Unknown ItemFlag: " + str);
                     }
                 }
             }
@@ -116,37 +116,12 @@ public class ItemBuilder {
             dmg.setDamage(config.getInt("damage"));
         }
 
-        if (meta instanceof SkullMeta skullMeta) {
-            applySkullMeta(skullMeta, config);
-        }
-
         if (config.contains("lore")) {
             meta.lore(config.getStringList("lore").stream().map(ItemBuilder::parse).toList());
         }
 
         item.setItemMeta(meta);
         return item;
-    }
-
-    private static void applySkullMeta(SkullMeta meta, ConfigurationSection config) {
-        try {
-            if (config.contains("skull-owner-uuid")) {
-                UUID uuid = UUID.fromString(Objects.requireNonNull(config.getString("skull-owner-uuid")));
-                OfflinePlayer owner = Bukkit.getOfflinePlayer(uuid);
-                meta.setOwningPlayer(owner);
-            } else if (config.contains("skull-texture-value")) {
-                String texture = config.getString("skull-texture-value");
-                if (texture != null && !texture.isBlank()) {
-                    var profile = new com.mojang.authlib.GameProfile(UUID.randomUUID(), null);
-                    profile.getProperties().put("textures", new com.mojang.authlib.properties.Property("textures", texture));
-                    if (skullProfileField != null) {
-                        skullProfileField.set(meta, profile);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log("Failed skull meta: " + e.getMessage());
-        }
     }
 
     private static Component parse(String legacy) {

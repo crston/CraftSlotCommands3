@@ -12,6 +12,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.inventory.Inventory;
@@ -77,6 +78,12 @@ public class CraftSlotItemsListener implements Listener {
     public void onInventoryDrag(InventoryDragEvent e) {
         InventoryView view = e.getView();
         if (isSelf2x2Crafting(view)) e.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent e) {
+        InventoryView view = e.getPlayer().getOpenInventory();
+        if (isSelf2x2Crafting(view)) scheduleUpdate(view);
     }
 
     @EventHandler

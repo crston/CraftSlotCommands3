@@ -14,6 +14,7 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.*;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
@@ -71,7 +72,7 @@ public class CraftSlotItemsListener implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent e) {
         InventoryView view = e.getView();
-        if (isSelf2x2Crafting(view)) scheduleUpdate(view);
+        if (isSelf2x2Crafting(view)) removeFakeItems(view); addFakeItems(view);
     }
 
     @EventHandler
@@ -83,7 +84,7 @@ public class CraftSlotItemsListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent e) {
         InventoryView view = e.getPlayer().getOpenInventory();
-        if (isSelf2x2Crafting(view)) scheduleUpdate(view);
+        if (isSelf2x2Crafting(view)) removeFakeItems(view); addFakeItems(view);
     }
 
     @EventHandler
@@ -96,6 +97,12 @@ public class CraftSlotItemsListener implements Listener {
     public void onPlayerDeath(PlayerDeathEvent e) {
         InventoryView view = e.getEntity().getOpenInventory();
         if (isSelf2x2Crafting(view)) removeFakeItems(view);
+    }
+
+    @EventHandler
+    public void onPlayerRespawn(PlayerRespawnEvent e) {
+        InventoryView view = e.getPlayer().getOpenInventory();
+        if (isSelf2x2Crafting(view)) addFakeItems(view);
     }
 
     public static boolean isSelf2x2Crafting(InventoryView view) {

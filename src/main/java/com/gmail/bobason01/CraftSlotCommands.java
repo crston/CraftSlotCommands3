@@ -5,31 +5,42 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.NamespacedKey;
 import org.bukkit.command.*;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.CraftingInventory;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import javax.annotation.Nonnull;
 import java.util.Collections;
 import java.util.List;
 
-import static com.gmail.bobason01.listener.CraftSlotItemsListener.isSelf2x2Crafting;
-import static com.gmail.bobason01.listener.CraftSlotItemsListener.removeFakeItems;
+import static com.gmail.bobason01.listener.CraftSlotItemsListener.*;
 
 public class CraftSlotCommands extends JavaPlugin implements Listener {
 
     private static CraftSlotCommands instance;
     private CraftSlotItemsListener craftSlotItemsListener;
     private ConfigurationSection craftingSlotSection;
+    private final NamespacedKey fakeItemKey = new NamespacedKey(this, "fake-item");
 
     public static CraftSlotCommands getInstance() {
         return instance;
+    }
+
+    public NamespacedKey getFakeItemKey() {
+        return fakeItemKey;
     }
 
     @Override
@@ -45,7 +56,23 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
     public void onDisable() {
         for (Player player : Bukkit.getOnlinePlayers()) {
             InventoryView view = player.getOpenInventory();
-            removeFakeItems(view);
+            Inventory top = view.getTopInventory();
+
+            if (top instanceof CraftingInventory craftingInventory && isSelf2x2Crafting(view)) {
+                for (int i = 0; i <= 4; i++) {
+                    ItemStack item = craftingInventory.getItem(i);
+                    if (item == null || item.getType().isAir()) continue;
+
+                    ItemMeta meta = item.getItemMeta();
+                    if (meta == null) continue;
+
+                    PersistentDataContainer pdc = meta.getPersistentDataContainer();
+                    if (pdc.has(getFakeItemKey(), PersistentDataType.BYTE)) {
+                        craftingInventory.setItem(i, null);
+                    }
+                }
+            }
+
             player.closeInventory();
         }
     }
@@ -63,18 +90,15 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
 
     private void registerEvents() {
         Bukkit.getPluginManager().registerEvents(this, this);
+        craftSlotItemsListener = new CraftSlotItemsListener(getConfig());
+        Bukkit.getPluginManager().registerEvents(craftSlotItemsListener, this);
     }
 
     public void reloadPlugin() {
         reloadConfig();
         craftingSlotSection = getConfig().getConfigurationSection("crafting-slot");
-        if (getConfig().getBoolean("items-enabled", true)) {
-            if (craftSlotItemsListener == null) {
-                craftSlotItemsListener = new CraftSlotItemsListener(getConfig());
-                Bukkit.getPluginManager().registerEvents(craftSlotItemsListener, this);
-            } else {
-                craftSlotItemsListener.reload(getConfig());
-            }
+        if (craftSlotItemsListener != null) {
+            craftSlotItemsListener.reload(getConfig());
         }
     }
 
@@ -102,6 +126,28 @@ public class CraftSlotCommands extends JavaPlugin implements Listener {
                 Bukkit.dispatchCommand(player, command);
             }
         });
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        InventoryView view = player.getOpenInventory();
+        Inventory top = view.getTopInventory();
+
+        if (top instanceof CraftingInventory craftingInventory && isSelf2x2Crafting(view)) {
+            for (int i = 0; i <= 4; i++) {
+                ItemStack item = craftingInventory.getItem(i);
+                if (item == null || item.getType().isAir()) continue;
+
+                ItemMeta meta = item.getItemMeta();
+                if (meta == null) continue;
+
+                PersistentDataContainer pdc = meta.getPersistentDataContainer();
+                if (pdc.has(getFakeItemKey(), PersistentDataType.BYTE)) {
+                    craftingInventory.setItem(i, null);
+                }
+            }
+        }
     }
 
     public static class CSCCommand implements CommandExecutor, TabCompleter {

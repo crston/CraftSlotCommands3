@@ -5,33 +5,30 @@ import com.gmail.bobason01.CraftSlotCommands;
 import com.gmail.bobason01.util.ItemBuilder;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.*;
-import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
-import org.bukkit.inventory.CraftingInventory;
-import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryView;
-import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.*;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class CraftSlotItemsListener implements Listener {
 
     private static final List<Integer> COMMAND_SLOTS = List.of(1, 2, 3, 4);
     private static final ItemStack[] items = new ItemStack[5];
     private static final boolean[] useSlot = new boolean[5];
-    private final Set<UUID> pendingUpdate = ConcurrentHashMap.newKeySet();
-    private final Map<UUID, Long> lastUpdateTime = new ConcurrentHashMap<>();
-    private int debounceMs = 100;
-    private boolean skipCreative = true;
+    private final NamespacedKey fakeItemKey = new NamespacedKey(CraftSlotCommands.getInstance(), "fake-item");
 
     public CraftSlotItemsListener(FileConfiguration config) {
         reload(config);
@@ -45,12 +42,6 @@ public class CraftSlotItemsListener implements Listener {
             items[i] = ItemBuilder.get(String.valueOf(i));
             useSlot[i] = useSlotSection != null && useSlotSection.getBoolean(String.valueOf(i), true);
         }
-
-        ConfigurationSection opt = config.getConfigurationSection("optimize");
-        if (opt != null) {
-            debounceMs = opt.getInt("debounce-ms", 100);
-            skipCreative = opt.getBoolean("skip-creative", true);
-        }
     }
 
     public static boolean useSlot(int i) {
@@ -58,102 +49,112 @@ public class CraftSlotItemsListener implements Listener {
     }
 
     @EventHandler
-    public void onRecipeClick(PlayerRecipeBookClickEvent e) {
-        if (isSelf2x2Crafting(e.getPlayer().getOpenInventory())) e.setCancelled(true);
-    }
-
-    @EventHandler
-    public void onInventoryClose(InventoryCloseEvent e) {
+    public void onInventoryOpen(InventoryOpenEvent e) {
         InventoryView view = e.getPlayer().getOpenInventory();
-        if (isSelf2x2Crafting(view)) scheduleUpdate(view);
-        removeFakeItems(view);
-    }
+        if (!shouldShowMenuItems(view)) return;
 
-    @EventHandler
-    public void onInventoryClick(InventoryClickEvent e) {
-        InventoryView view = e.getView();
-        if (isSelf2x2Crafting(view)) removeFakeItems(view); addFakeItems(view);
-    }
-
-    @EventHandler
-    public void onInventoryDrag(InventoryDragEvent e) {
-        InventoryView view = e.getView();
-        if (isSelf2x2Crafting(view)) e.setCancelled(true);
-    }
-
-    @EventHandler
-    public void onPlayerJoin(PlayerJoinEvent e) {
-        InventoryView view = e.getPlayer().getOpenInventory();
-        if (isSelf2x2Crafting(view)) removeFakeItems(view); addFakeItems(view);
-    }
-
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent e) {
-        InventoryView view = e.getPlayer().getOpenInventory();
-        if (isSelf2x2Crafting(view)) removeFakeItems(view);
-    }
-
-    @EventHandler
-    public void onPlayerDeath(PlayerDeathEvent e) {
-        InventoryView view = e.getEntity().getOpenInventory();
-        if (isSelf2x2Crafting(view)) removeFakeItems(view);
-    }
-
-    @EventHandler
-    public void onPlayerRespawn(PlayerRespawnEvent e) {
-        InventoryView view = e.getPlayer().getOpenInventory();
-        if (isSelf2x2Crafting(view)) addFakeItems(view);
-    }
-
-    public static boolean isSelf2x2Crafting(InventoryView view) {
-        Inventory inv = view.getTopInventory();
-        if (!(inv instanceof CraftingInventory)) return false;
-        if (inv.getSize() != 5) return false;
-        if (inv.getType() != InventoryType.CRAFTING) return false;
-        return view.getPlayer() instanceof Player p && Objects.equals(inv.getHolder(), p);
-    }
-
-    private void scheduleUpdate(InventoryView view) {
-        Player player = (Player) view.getPlayer();
-        UUID uuid = player.getUniqueId();
-
-        long now = System.currentTimeMillis();
-        long last = lastUpdateTime.getOrDefault(uuid, 0L);
-
-        if (now - last < debounceMs) return;
-
-        lastUpdateTime.put(uuid, now);
-        if (!pendingUpdate.add(uuid)) return;
-
+        removeAllTaggedFakeItems(view);
         Bukkit.getScheduler().runTaskLater(CraftSlotCommands.getInstance(), () -> {
-            pendingUpdate.remove(uuid);
-            if (isSelf2x2Crafting(view)) {
-                removeFakeItems(view);
+            if (shouldShowMenuItems(view)) {
                 addFakeItems(view);
             }
         }, 2L);
     }
 
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent e) {
+        InventoryView view = e.getView();
+        if (!shouldShowMenuItems(view)) return;
+
+        removeAllTaggedFakeItems(view);
+        Bukkit.getScheduler().runTaskLater(CraftSlotCommands.getInstance(), () -> {
+            if (shouldShowMenuItems(view)) {
+                addFakeItems(view);
+            }
+        }, 2L);
+    }
+
+    @EventHandler
+    public void onInventoryClose(InventoryCloseEvent e) {
+        InventoryView view = e.getPlayer().getOpenInventory();
+        if (!shouldShowMenuItems(view)) return;
+
+        removeAllTaggedFakeItems(view);
+        Bukkit.getScheduler().runTaskLater(CraftSlotCommands.getInstance(), () -> {
+            if (shouldShowMenuItems(view)) {
+                addFakeItems(view);
+            }
+        }, 2L);
+    }
+
+    @EventHandler
+    public void onInventoryDrag(InventoryDragEvent e) {
+        if (shouldShowMenuItems(e.getView())) e.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent e) {
+        clearFakeItemsEverywhere(e.getPlayer());
+        e.getPlayer().closeInventory();
+    }
+
+    @EventHandler
+    public void onPlayerDeath(PlayerDeathEvent e) {
+        clearFakeItemsEverywhere(e.getEntity());
+    }
+
+    @EventHandler
+    public void onPlayerRespawn(PlayerRespawnEvent e) {
+        Bukkit.getScheduler().runTaskLater(CraftSlotCommands.getInstance(), () -> {
+            InventoryView view = e.getPlayer().getOpenInventory();
+            if (shouldShowMenuItems(view)) {
+                addFakeItems(view);
+            }
+        }, 2L);
+    }
+
+    @EventHandler
+    public void onRecipeClick(PlayerRecipeBookClickEvent e) {
+        if (shouldShowMenuItems(e.getPlayer().getOpenInventory())) {
+            e.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onItemSpawn(ItemSpawnEvent e) {
+        ItemStack item = e.getEntity().getItemStack();
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return;
+
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        if (pdc.has(fakeItemKey, PersistentDataType.BYTE)) {
+            e.setCancelled(true);
+        }
+    }
+
     private void addFakeItems(InventoryView view) {
+        if (!shouldShowMenuItems(view)) return;
+
         Player player = (Player) view.getPlayer();
-        if (skipCreative && player.getGameMode() == GameMode.CREATIVE) return;
+        if (player.getGameMode() == GameMode.CREATIVE) return;
 
         Inventory inv = view.getTopInventory();
-        int size = inv.getSize();
 
         for (int slot : COMMAND_SLOTS) {
-            if (useSlot(slot) || slot >= size) continue;
+            if (useSlot(slot) || slot >= inv.getSize()) continue;
 
-            ItemStack item = items[slot];
-            if (item == null) continue;
+            ItemStack base = items[slot];
+            if (base == null) continue;
 
             ItemStack current = inv.getItem(slot);
             if (current == null || current.getType().isAir()) {
-                inv.setItem(slot, item);
+                ItemStack clone = base.clone();
+                clone.editMeta(meta -> meta.getPersistentDataContainer().set(fakeItemKey, PersistentDataType.BYTE, (byte) 1));
+                inv.setItem(slot, clone);
             }
         }
 
-        if (items[0] != null && size > 0) {
+        if (items[0] != null) {
             boolean showResult = true;
             for (int slot : COMMAND_SLOTS) {
                 if (useSlot(slot)) continue;
@@ -164,30 +165,57 @@ public class CraftSlotItemsListener implements Listener {
                 }
             }
 
-            if (showResult) {
-                ItemStack result = inv.getItem(0);
-                if (result == null || result.getType().isAir()) {
-                    inv.setItem(0, items[0]);
-                }
+            if (showResult && (inv.getItem(0) == null || Objects.requireNonNull(inv.getItem(0)).getType().isAir())) {
+                ItemStack clone = items[0].clone();
+                clone.editMeta(meta -> meta.getPersistentDataContainer().set(fakeItemKey, PersistentDataType.BYTE, (byte) 1));
+                inv.setItem(0, clone);
             }
         }
     }
 
-    public static void removeFakeItems(InventoryView view) {
+    public static void removeAllTaggedFakeItems(InventoryView view) {
         Inventory inv = view.getTopInventory();
-        if (!(inv instanceof CraftingInventory)) return;
+        for (int i = 0; i < inv.getSize(); i++) {
+            ItemStack item = inv.getItem(i);
+            if (item == null || item.getType().isAir()) continue;
 
-        int size = inv.getSize();
-        for (int i = 0; i <= 4 && i < size; i++) {
-            if (useSlot(i)) continue;
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null) continue;
 
-            ItemStack expected = items[i];
-            if (expected == null) continue;
-
-            ItemStack current = inv.getItem(i);
-            if (current != null && current.getType() == expected.getType() && current.isSimilar(expected)) {
+            PersistentDataContainer pdc = meta.getPersistentDataContainer();
+            if (pdc.has(CraftSlotCommands.getInstance().getFakeItemKey(), PersistentDataType.BYTE)) {
                 inv.setItem(i, null);
             }
         }
+    }
+
+    private void clearFakeItemsEverywhere(Player player) {
+        InventoryView view = player.getOpenInventory();
+        removeAllTaggedFakeItems(view);
+
+        PlayerInventory inv = player.getInventory();
+        for (int i = 1; i <= 4; i++) {
+            ItemStack item = inv.getItem(i);
+            if (item == null || item.getType().isAir()) continue;
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null) continue;
+            PersistentDataContainer pdc = meta.getPersistentDataContainer();
+            if (pdc.has(fakeItemKey, PersistentDataType.BYTE)) {
+                inv.setItem(i, null);
+            }
+        }
+    }
+
+    public static boolean isSelf2x2Crafting(InventoryView view) {
+        Inventory inv = view.getTopInventory();
+        return inv instanceof CraftingInventory
+                && inv.getSize() == 5
+                && inv.getType() == InventoryType.CRAFTING
+                && view.getPlayer() instanceof Player p
+                && Objects.equals(inv.getHolder(), p);
+    }
+
+    private boolean shouldShowMenuItems(InventoryView view) {
+        return isSelf2x2Crafting(view);
     }
 }
